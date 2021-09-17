@@ -25,26 +25,24 @@ struct User {
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     dotenv::dotenv().expect("Failed to load .env file");
+    let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
+
     let args = Cli::from_args();
 
-    let bin_id = format!("{:b}", args.id);
-    let bin_id_2 = format!("{:0>64}", bin_id);
-    let bin_time = &bin_id_2[..42];
+    let bin_id = format!("{:064b}", args.id);
+    let bin_time = &bin_id[..42];
     let time = u64::from_str_radix(bin_time, 2).unwrap();
 
     let d = UNIX_EPOCH + Duration::from_millis(time+DISCORD_EPOCH);
-    let datetime = DateTime::<Utc>::from(d);
-    let timestamp_str = datetime.format("%a, %Y-%m-%d %H:%M:%S").to_string();
-
-    let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
+    let datetime = DateTime::<Utc>::from(d).format("%a, %Y-%m-%d %H:%M:%S").to_string();
 
     let url = format!("https://discord.com/api/v9/users/{}", args.id);
     let client = reqwest::Client::new();
     let resp = client
-    .get(url)
-    .header(AUTHORIZATION, "Bot ".to_string() + &token)
-    .send()
-    .await?;
+        .get(url)
+        .header(AUTHORIZATION, "Bot ".to_string() + &token)
+        .send()
+        .await?;
 
     if resp.status().as_str() == "200" {
         let json_resp = resp.json::<User>().await?;
@@ -53,14 +51,17 @@ async fn main() -> Result<(), Error> {
         println!("Username: {}", json_resp.username);
         println!("Discriminator: {}", json_resp.discriminator);
         println!("Avatar URL: https://cdn.discordapp.com/avatars/{}/{}.webp?size=256", json_resp.id,json_resp.avatar);
-        println!("Created At: {}", timestamp_str);
+        println!("Created At: {}", datetime);
 
     } else if resp.status().as_str() == "401"{
-        println!("401 Unauthorized");
+        println!("{}", resp.status());
         println!("Your token might be invalid, check if your token in /.env is properly written.");
     } else if resp.status().as_str() == "404" {
-        println!("404 Not found");
+        println!("{}", resp.status());
         println!("Your ID does not belong to a user or does not exist.");
+    } else if resp.status().is_server_error() {
+        println!("{}", resp.status());
+        println!("An internal error has occurred.");
     }
     
     Ok(())
